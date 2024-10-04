@@ -1,8 +1,15 @@
-﻿using OfficeOpenXml;
+﻿using System.Text.RegularExpressions;
+using OfficeOpenXml;
 using LubanHelper;
 
 class Program
 {
+    
+    private static Regex _excludeRegex = new("^__");
+    private static Regex _oneMode = new("#one$", RegexOptions.IgnoreCase);
+    private static Regex _listMode = new("#list$", RegexOptions.IgnoreCase);
+    private static Regex _mapMode = new("#map$", RegexOptions.IgnoreCase);
+    
     static void Main(string[] args)
     {
         if (args.Length == 0)
@@ -11,7 +18,7 @@ class Program
             return;
         }
 
-        if (args[0].Equals("syncTables"))
+        if (args[0].Equals("updateTables"))
         {
             string tablesPath = null;
             string dataPath = null;
@@ -39,12 +46,12 @@ class Program
                 return;
             }
             
-            SyncTables(tablesPath, dataPath);
+            UpdateTables(tablesPath, dataPath);
                 
         }
     }
 
-    private static void SyncTables(string tablesFilePath, string dataPath)
+    private static void UpdateTables(string tablesFilePath, string dataPath)
     {
         if (!File.Exists(tablesFilePath))
         {
@@ -64,18 +71,57 @@ class Program
             var info = new FileInfo(file);
             if (!info.Extension.Equals(".xlsx"))
                 continue;
+            if (_excludeRegex.IsMatch(info.Name))
+            {
+                Console.WriteLine($"Skip file {info.Name}");
+                continue;
+            }
+            
             using var package = new ExcelPackage(info);
             foreach (var worksheet in package.Workbook.Worksheets)
             {
-                Console.WriteLine($"Processing file {info.Name} sheet {worksheet.Name}");
+                if (_excludeRegex.IsMatch(worksheet.Name))
+                {
+                    Console.WriteLine($"Skip sheet {worksheet.Name} of file {info.Name} ");
+                    continue;
+                }
+                
+                Console.WriteLine($"Processing sheet {worksheet.Name} of file {info.Name}");
+                var sheetName = worksheet.Name;
+                string mode = "";
+                if (_oneMode.IsMatch(sheetName))
+                {
+                    sheetName = _oneMode.Replace(sheetName, "");
+                    mode = "one";
+                }
+                else if (_listMode.IsMatch(sheetName))
+                {
+                    sheetName = _listMode.Replace(sheetName, "");
+                    mode = "list";
+                }
+                else if (_mapMode.IsMatch(sheetName))
+                {
+                    sheetName = _mapMode.Replace(sheetName, "");
+                }
+                
+                var split = sheetName.Split(".");
+                var valueType = split[^1];
+                string fullName;
+                if (split.Length > 1)
+                    fullName = $"{string.Join(".", split.Take(split.Length - 1))}.Tb{valueType}";
+                else
+                    fullName = $"Tb{valueType}";
+                
                 var tableItem = new TableItem
                 {
-                    FullName = $"Tb{worksheet.Name}",
-                    ValueType = worksheet.Name,
+                    FullName = fullName,
+                    ValueType = valueType,
                     Input = $"../{worksheet.Name}@{info.Name}",
-                    Mode = worksheet.Name.Contains("Global")? "one" : "",
+                    Mode = mode
                 };
                 tableItems.Add(tableItem);
+                
+                // Console.WriteLine($"{tableItem.FullName} {tableItem.ValueType} {tableItem.Input} {tableItem.Mode}");
             }
         }
 
@@ -94,7 +140,7 @@ class Program
         {
             using var tablesPackage = new ExcelPackage(tablesFileInfo);
             var worksheet = tablesPackage.Workbook.Worksheets[0];
-            worksheet.DeleteRow(4, 200);
+            worksheet.DeleteRow(4, 999);
             var row = 4;
             foreach (var tableItem in tableItems)
             {
@@ -107,6 +153,8 @@ class Program
             }
 
             tablesPackage.Save();
+            
+            Console.WriteLine("Completed.");
         }
         catch (Exception ex)
         {
