@@ -9,6 +9,7 @@ class Program
     private static Regex _oneMode = new("#one$", RegexOptions.IgnoreCase);
     private static Regex _listMode = new("#list$", RegexOptions.IgnoreCase);
     private static Regex _mapMode = new("#map$", RegexOptions.IgnoreCase);
+    private static Regex _part = new("-\\d+$");
     
     static void Main(string[] args)
     {
@@ -64,7 +65,8 @@ class Program
             return;
         }
 
-        var tableItems = new List<TableItem>();
+        var relativePath = GetRelativePath(tablesFilePath, dataPath);
+        var tableItemDict = new Dictionary<string, TableItem>();
         var files = Directory.GetFiles(dataPath);
         foreach (var file in files)
         {
@@ -106,20 +108,33 @@ class Program
                 
                 var split = sheetName.Split(".");
                 var valueType = split[^1];
+                if (_part.IsMatch(valueType))
+                {
+                    valueType = _part.Replace(valueType, "");
+                }
+                
                 string fullName;
                 if (split.Length > 1)
                     fullName = $"{string.Join(".", split.Take(split.Length - 1))}.Tb{valueType}";
                 else
                     fullName = $"Tb{valueType}";
-                
-                var tableItem = new TableItem
+
+                if (tableItemDict.TryGetValue(fullName, out var itemInDict))
                 {
-                    FullName = fullName,
-                    ValueType = valueType,
-                    Input = $"../{worksheet.Name}@{info.Name}",
-                    Mode = mode
-                };
-                tableItems.Add(tableItem);
+                    // 多工作表对单数据表，追加到输入文件字段
+                    itemInDict.Input = $"{itemInDict.Input},{relativePath}{worksheet.Name}@{info.Name}";
+                }
+                else
+                {
+                    var tableItem = new TableItem
+                    {
+                        FullName = fullName,
+                        ValueType = valueType,
+                        Input = $"{relativePath}{worksheet.Name}@{info.Name}",
+                        Mode = mode
+                    };
+                    tableItemDict.Add(tableItem.FullName, tableItem);
+                }
                 
                 // Console.WriteLine($"{tableItem.FullName} {tableItem.ValueType} {tableItem.Input} {tableItem.Mode}");
             }
@@ -142,7 +157,7 @@ class Program
             var worksheet = tablesPackage.Workbook.Worksheets[0];
             worksheet.DeleteRow(4, 999);
             var row = 4;
-            foreach (var tableItem in tableItems)
+            foreach (var tableItem in tableItemDict.Values)
             {
                 worksheet.Cells[row, 2].Value = tableItem.FullName;
                 worksheet.Cells[row, 3].Value = tableItem.ValueType;
@@ -162,4 +177,22 @@ class Program
         }
 
     }
+
+    private static string GetRelativePath(string pathA, string pathB)
+    {
+        var uriA = new Uri(EnsureTrailingSlash(pathA));
+        var uriB = new Uri(EnsureTrailingSlash(pathB));
+        var relativeUri = uriA.MakeRelativeUri(uriB);
+        return Uri.UnescapeDataString(relativeUri.ToString());
+    }
+    
+    private static string EnsureTrailingSlash(string path)
+    {
+        if (!path.EndsWith(Path.DirectorySeparatorChar.ToString()) && Directory.Exists(path))
+        {
+            return $"{path}{Path.DirectorySeparatorChar}";
+        }
+        return path;
+    }
+
 }
