@@ -180,8 +180,8 @@ class Program
 
     private static string GetRelativePath(string pathA, string pathB)
     {
-        var uriA = new Uri(EnsureTrailingSlash(pathA));
-        var uriB = new Uri(EnsureTrailingSlash(pathB));
+        var uriA = new Uri(EnsureTrailingSlash(Path.GetFullPath(pathA)));
+        var uriB = new Uri(EnsureTrailingSlash(Path.GetFullPath(pathB)));
         var relativeUri = uriA.MakeRelativeUri(uriB);
         return Uri.UnescapeDataString(relativeUri.ToString());
     }
