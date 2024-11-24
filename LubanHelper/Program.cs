@@ -48,7 +48,30 @@ class Program
             }
             
             UpdateTables(tablesPath, dataPath);
-                
+        }
+        else if (args[0].Equals("updateL10N"))
+        {
+            UpdateL10NParams p = new UpdateL10NParams
+            {
+                NoteColumnSuffix = "Note",
+                TextIdColumnSuffix = "TextId",
+                L10NIdColumnName = "Id",
+                L10NTextColumnName = "zh_Hans"
+            };
+
+            for (int i = 1; i < args.Length; i++)
+            {
+                if (args[i] == "--l10nPath" && i + 1 < args.Length)
+                {
+                    p.L10NFilePath = args[i + 1];
+                }
+                if (args[i] == "--dataPath" && i + 1 < args.Length)
+                {
+                    p.DataPath = args[i + 1];
+                }
+            }
+            
+            UpdateL10N(p);
         }
     }
 
@@ -61,7 +84,7 @@ class Program
         }
         if (!Directory.Exists(dataPath))
         {
-            Console.Error.WriteLine($"Error: Data directory not exists: {tablesFilePath}");
+            Console.Error.WriteLine($"Error: Data directory not exists: {dataPath}");
             return;
         }
 
@@ -194,5 +217,184 @@ class Program
         }
         return path;
     }
+    
+    private static void UpdateL10N(UpdateL10NParams p)
+    {
+        if (!File.Exists(p.L10NFilePath))
+        {
+            Console.Error.WriteLine($"Error: L10N Table file not exists: {p.L10NFilePath}");
+            return;
+        }
+        if (!Directory.Exists(p.DataPath))
+        {
+            Console.Error.WriteLine($"Error: Data directory not exists: {p.DataPath}");
+            return;
+        }
 
+        // Fill L10N dict
+        var l10nFileInfo = new FileInfo(p.L10NFilePath);
+        using var l10nExcel = new ExcelPackage(l10nFileInfo);
+        var l10nDict = new Dictionary<int, string>();
+        var l10nDict1 = new Dictionary<string, int>();
+        var l10nSheet = l10nExcel.Workbook.Worksheets[0];
+        var l10nRow = 4;
+        var l10nId = 0;
+        while (l10nRow < 10000)
+        {
+            var idCell = l10nSheet.Cells[l10nRow, 2];
+            if (idCell.Value == null || string.IsNullOrWhiteSpace(idCell.Text))
+            {
+                break;
+            }
+            try
+            {
+                l10nId = idCell.GetValue<int>();
+                var content = l10nSheet.Cells[l10nRow, 3].Text;
+                l10nDict.Add(l10nId, content);
+                Console.WriteLine($"Read L10NTable row {l10nRow}: {l10nId} {content}");
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Error: Read {l10nFileInfo.Name} row {l10nRow} failed: \n{ex.Message}");
+                return;
+            }
+            l10nRow++;
+        }
+        foreach (var pair in l10nDict)
+        {
+            if (l10nDict1.ContainsKey(pair.Value))
+                continue;
+            l10nDict1[pair.Value] = pair.Key;
+        }
+        
+        // Process data files
+        var files = Directory.GetFiles(p.DataPath);
+        foreach (var file in files)
+        {
+            var info = new FileInfo(file);
+            if (!info.Extension.Equals(".xlsx"))
+                continue;
+            if (_excludeRegex.IsMatch(info.Name))
+            {
+                Console.WriteLine($"Skip file {info.Name}");
+                continue;
+            }
+
+            var excel = new ExcelPackage(info);
+            foreach (var worksheet in excel.Workbook.Worksheets)
+            {
+                // Find L10N fields
+                var noteIdDict = new Dictionary<ExcelRange, ExcelRange>();
+                for (int i = 3; i < 200; i++)
+                {
+                    var cell = worksheet.Cells[1, i];
+                    if (cell.Value == null || string.IsNullOrWhiteSpace(cell.Text))
+                        break;
+                    if (cell.Text.EndsWith(p.NoteColumnSuffix))
+                        noteIdDict.Add(cell, null);
+                }
+                for (int i = 3; i < 200; i++)
+                {
+                    var cell = worksheet.Cells[1, i];
+                    if (cell.Value == null || string.IsNullOrWhiteSpace(cell.Text))
+                        break;
+                    if (cell.Text.EndsWith(p.TextIdColumnSuffix))
+                    {
+                        var field = cell.Text.Replace(p.TextIdColumnSuffix, "");
+                        foreach (var key in noteIdDict.Keys)
+                        {
+                            if (key.Text.Replace(p.NoteColumnSuffix, "").Replace("#", "") == field)
+                            {
+                                noteIdDict[key] = cell;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (noteIdDict.Count == 0)
+                {
+                    // Console.WriteLine($"{info.Name} {worksheet.Name} L10N fields not found.");
+                    continue;
+                }
+                Console.WriteLine($"================================");
+                Console.WriteLine($"{info.Name} {worksheet.Name} L10N fields: ");
+                foreach (var pair in noteIdDict)
+                {
+                    if (pair.Value != null)
+                        Console.WriteLine($"{pair.Key.Text} : {pair.Value.Text}");
+                }
+                
+                // Fill L10N fields
+                foreach (var pair in noteIdDict)
+                {
+                    if (pair.Value == null)
+                        continue;
+                    var keyCol = pair.Key.Start.Column;
+                    var valueCol = pair.Value.Start.Column;
+                    for (var row = GetContentStartRow(worksheet); row < GetContentTotalRow(worksheet, row); row++)
+                    {
+                        var noteCell = worksheet.Cells[row, keyCol];
+                        if (noteCell.Value == null || string.IsNullOrEmpty(noteCell.Text) || string.IsNullOrWhiteSpace(noteCell.Text))
+                            break;
+                        var idCell = worksheet.Cells[row, valueCol];
+                        var noteText = noteCell.Text;
+                        if (l10nDict1.TryGetValue(noteText, out int id))
+                        {
+                            idCell.Value = id;
+                            Console.WriteLine($"Set row {row} {pair.Key.Text} = {noteText} {pair.Value.Text} = {id} (Exist)");
+                        }
+                        else
+                        {
+                            l10nId++;
+                            l10nSheet.Cells[l10nRow, 2].Value = l10nId;
+                            l10nSheet.Cells[l10nRow, 3].Value = noteText;
+                            l10nDict.Add(l10nId, noteText);
+                            l10nDict1.Add(noteText, l10nId);
+                            l10nRow++;
+                            idCell.Value = l10nId;
+                            Console.WriteLine($"Set row {row} {pair.Key.Text} = {noteText} {pair.Value.Text} = {l10nId} (New)");
+                        }
+                    }
+                }
+                l10nExcel.Save();
+            }
+            excel.Save();
+        }
+    }
+
+    private static int GetContentStartRow(ExcelWorksheet worksheet)
+    {
+        for (int i = 1; i < 50; i++)
+        {
+            var cell = worksheet.Cells[i, 1];
+            if (cell.Value == null || string.IsNullOrWhiteSpace(cell.Text) || string.IsNullOrEmpty(cell.Text))
+                return i;
+            if (!cell.Text.StartsWith("#"))
+                return i;
+        }
+        return 4;
+    }
+
+    private static int GetContentTotalRow(ExcelWorksheet worksheet, int contentStartRow)
+    {
+        for (int i = contentStartRow; i < 10000; i++)
+        {
+            var cell = worksheet.Cells[i, 2];
+            if (cell.Value == null || string.IsNullOrWhiteSpace(cell.Text) || string.IsNullOrEmpty(cell.Text))
+                return i;
+        }
+        return contentStartRow;
+    }
+}
+
+
+public struct UpdateL10NParams
+{
+    public string L10NFilePath;
+    public string DataPath;
+    public string NoteColumnSuffix;
+    public string TextIdColumnSuffix;
+    public string L10NIdColumnName;
+    public string L10NTextColumnName;
+    public bool ClearL10N;
 }
