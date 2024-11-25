@@ -55,8 +55,7 @@ class Program
             {
                 NoteColumnSuffix = "Note",
                 TextIdColumnSuffix = "TextId",
-                L10NIdColumnName = "Id",
-                L10NTextColumnName = "zh_Hans"
+                L10NStartId = -1,
             };
 
             for (int i = 1; i < args.Length; i++)
@@ -68,6 +67,19 @@ class Program
                 if (args[i] == "--dataPath" && i + 1 < args.Length)
                 {
                     p.DataPath = args[i + 1];
+                }
+                if (args[i] == "--noteColumnSuffix" && i + 1 < args.Length)
+                {
+                    p.NoteColumnSuffix = args[i + 1];
+                }
+                if (args[i] == "--textIdColumnSuffix" && i + 1 < args.Length)
+                {
+                    p.TextIdColumnSuffix = args[i + 1];
+                }
+                if (args[i] == "--l10nStartId" && i + 1 < args.Length)
+                {
+                    if (int.TryParse(args[i + 1], out var id))
+                        p.L10NStartId = id;
                 }
             }
             
@@ -237,19 +249,18 @@ class Program
         var l10nDict = new Dictionary<int, string>();
         var l10nDict1 = new Dictionary<string, int>();
         var l10nSheet = l10nExcel.Workbook.Worksheets[0];
-        var l10nRow = 4;
+        var l10nRow = GetContentStartRow(l10nSheet);
         var l10nId = 0;
-        while (l10nRow < 10000)
+        while (l10nRow < 10000) // hard-coded row limit
         {
-            var idCell = l10nSheet.Cells[l10nRow, 2];
-            if (idCell.Value == null || string.IsNullOrWhiteSpace(idCell.Text))
-            {
+            var idCell = l10nSheet.Cells[l10nRow, 2];   // hard-coded id column
+            if (IsCellEmpty(idCell))
                 break;
-            }
+            
             try
             {
                 l10nId = idCell.GetValue<int>();
-                var content = l10nSheet.Cells[l10nRow, 3].Text;
+                var content = l10nSheet.Cells[l10nRow, 3].Text; // hard-coded content column
                 l10nDict.Add(l10nId, content);
                 Console.WriteLine($"Read L10NTable row {l10nRow}: {l10nId} {content}");
             }
@@ -260,6 +271,9 @@ class Program
             }
             l10nRow++;
         }
+        if (p.L10NStartId != -1 && l10nId < p.L10NStartId)
+            l10nId = p.L10NStartId - 1;
+        
         foreach (var pair in l10nDict)
         {
             if (l10nDict1.ContainsKey(pair.Value))
@@ -285,18 +299,18 @@ class Program
             {
                 // Find L10N fields
                 var noteIdDict = new Dictionary<ExcelRange, ExcelRange>();
-                for (int i = 3; i < 200; i++)
+                for (int i = 3; i < 1000; i++) // hard-coded column limit
                 {
                     var cell = worksheet.Cells[1, i];
-                    if (cell.Value == null || string.IsNullOrWhiteSpace(cell.Text))
+                    if (IsCellEmpty(cell))
                         break;
                     if (cell.Text.EndsWith(p.NoteColumnSuffix))
                         noteIdDict.Add(cell, null);
                 }
-                for (int i = 3; i < 200; i++)
+                for (int i = 3; i < 1000; i++)  // hard-coded column limit
                 {
                     var cell = worksheet.Cells[1, i];
-                    if (cell.Value == null || string.IsNullOrWhiteSpace(cell.Text))
+                    if (IsCellEmpty(cell))
                         break;
                     if (cell.Text.EndsWith(p.TextIdColumnSuffix))
                     {
@@ -334,7 +348,7 @@ class Program
                     for (var row = GetContentStartRow(worksheet); row < GetContentTotalRow(worksheet, row); row++)
                     {
                         var noteCell = worksheet.Cells[row, keyCol];
-                        if (noteCell.Value == null || string.IsNullOrEmpty(noteCell.Text) || string.IsNullOrWhiteSpace(noteCell.Text))
+                        if (IsCellEmpty(noteCell))
                             break;
                         var idCell = worksheet.Cells[row, valueCol];
                         var noteText = noteCell.Text;
@@ -362,12 +376,17 @@ class Program
         }
     }
 
+    private static bool IsCellEmpty(ExcelRange cell)
+    {
+        return cell.Value == null || string.IsNullOrEmpty(cell.Text) || string.IsNullOrWhiteSpace(cell.Text);
+    }
+
     private static int GetContentStartRow(ExcelWorksheet worksheet)
     {
         for (int i = 1; i < 50; i++)
         {
             var cell = worksheet.Cells[i, 1];
-            if (cell.Value == null || string.IsNullOrWhiteSpace(cell.Text) || string.IsNullOrEmpty(cell.Text))
+            if (IsCellEmpty(cell))
                 return i;
             if (!cell.Text.StartsWith("#"))
                 return i;
@@ -380,7 +399,7 @@ class Program
         for (int i = contentStartRow; i < 10000; i++)
         {
             var cell = worksheet.Cells[i, 2];
-            if (cell.Value == null || string.IsNullOrWhiteSpace(cell.Text) || string.IsNullOrEmpty(cell.Text))
+            if (IsCellEmpty(cell))
                 return i;
         }
         return contentStartRow;
@@ -394,7 +413,6 @@ public struct UpdateL10NParams
     public string DataPath;
     public string NoteColumnSuffix;
     public string TextIdColumnSuffix;
-    public string L10NIdColumnName;
-    public string L10NTextColumnName;
-    public bool ClearL10N;
+    public int L10NStartId;
+    public bool ClearL10N; // not implemented yet
 }
