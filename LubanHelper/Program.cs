@@ -81,6 +81,10 @@ class Program
                     if (int.TryParse(args[i + 1], out var id))
                         p.L10NStartId = id;
                 }
+                if (args[i] == "--appendFile" && i + 1 < args.Length)
+                {
+                    p.AppendFilePath = args[i + 1];
+                }
             }
             
             UpdateL10N(p);
@@ -374,6 +378,55 @@ class Program
             }
             excel.Save();
         }
+        
+        // Append file
+        if (string.IsNullOrEmpty(p.AppendFilePath))
+            return;
+        if (!File.Exists(p.AppendFilePath))
+        {
+            Console.Error.WriteLine($"Error: Append Table file not exists: {p.AppendFilePath}");
+            return;
+        }
+        var appendIds = new List<int>();
+        var appendContents = new List<string>();
+        foreach (var line in File.ReadLines(p.AppendFilePath))
+        {
+            var split = line.Split(",");
+            if (!int.TryParse(split[0], out var id))
+                continue;
+            appendIds.Add(id);
+            appendContents.Add(split[1]);
+        }
+        if (appendIds.Count == 0)
+            return;
+        Console.WriteLine($"================================");
+        var appendRow = GetContentStartRow(l10nSheet);
+        while (appendRow < 10000) // hard-coded row limit
+        {
+            var idCell = l10nSheet.Cells[appendRow, 2];   // hard-coded id column
+            if (IsCellEmpty(idCell))
+                break;
+            try
+            {
+                l10nId = idCell.GetValue<int>();
+                if (l10nId >= appendIds[0])
+                    break;
+            }
+            catch (Exception ex)
+            {
+                return;
+            }
+            appendRow++;
+        }
+        for (int i = 0; i < appendIds.Count; i++)
+        {
+            Console.WriteLine($"{appendRow} {appendIds[i]} {appendContents[i]}");
+            l10nSheet.Cells[appendRow, 2].Value = appendIds[i];
+            l10nSheet.Cells[appendRow, 3].Value = appendContents[i];
+            appendRow++;
+        }
+        l10nExcel.Save();
+        Console.WriteLine($"{appendIds.Count} rows appended");
     }
 
     private static bool IsCellEmpty(ExcelRange cell)
@@ -415,4 +468,5 @@ public struct UpdateL10NParams
     public string TextIdColumnSuffix;
     public int L10NStartId;
     public bool ClearL10N; // not implemented yet
+    public string AppendFilePath;
 }
