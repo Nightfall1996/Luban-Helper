@@ -18,38 +18,40 @@ public static class Utils
         return _excludeRegex.IsMatch(fileName);
     }
     
-    // 获取相对路径
-    public static string GetRelativePath(string pathA, string pathB)
+    public static string GetRelativeFilePath(string basePath, string fullFilePath)
     {
-        var uriA = new Uri(EnsureTrailingSlash(Path.GetFullPath(pathA)));
-        var uriB = new Uri(EnsureTrailingSlash(Path.GetFullPath(pathB)));
-        var relativeUri = uriA.MakeRelativeUri(uriB);
-        return Uri.UnescapeDataString(relativeUri.ToString());
-    }
-    
-    // 确保路径以分隔符结尾
-    public static string EnsureTrailingSlash(string path)
-    {
-        if (!path.EndsWith(Path.DirectorySeparatorChar.ToString()) && Directory.Exists(path))
+        // 规范化路径格式
+        basePath = Path.GetFullPath(basePath);
+        fullFilePath = Path.GetFullPath(fullFilePath);
+        
+        // 检查文件是否在基础目录下
+        if (!fullFilePath.StartsWith(basePath, StringComparison.OrdinalIgnoreCase))
         {
-            return $"{path}{Path.DirectorySeparatorChar}";
+            throw new ArgumentException("文件不在指定基础目录下");
         }
-        return path;
+        
+        // 计算相对路径
+        string relativePath = fullFilePath.Substring(basePath.Length);
+        
+        // 移除开头的路径分隔符
+        relativePath = relativePath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        
+        return relativePath;
     }
-    
+
     // 判断单元格是否为空
-    public static bool IsCellEmpty(ExcelRange cell)
+    public static bool IsCellEmpty(this ExcelRange cell)
     {
         return cell.Value == null || string.IsNullOrEmpty(cell.Text) || string.IsNullOrWhiteSpace(cell.Text);
     }
     
     // 获取内容起始行
-    public static int GetContentStartRow(ExcelWorksheet worksheet)
+    public static int GetContentStartRow(this ExcelWorksheet worksheet)
     {
         for (int i = 1; i < MaxHeaderScanRow; i++)
         {
             var cell = worksheet.Cells[i, 1];
-            if (IsCellEmpty(cell))
+            if (cell.IsCellEmpty())
                 return i;
             if (!cell.Text.StartsWith("#"))
                 return i;
@@ -58,12 +60,12 @@ public static class Utils
     }
     
     // 获取内容总行数
-    public static int GetContentTotalRow(ExcelWorksheet worksheet, int contentStartRow)
+    public static int GetContentTotalRow(this ExcelWorksheet worksheet, int contentStartRow)
     {
         for (int i = contentStartRow; i < MaxRowCount; i++)
         {
             var cell = worksheet.Cells[i, 2];
-            if (IsCellEmpty(cell))
+            if (cell.IsCellEmpty())
                 return i;
         }
         return contentStartRow;

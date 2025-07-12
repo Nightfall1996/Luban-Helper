@@ -80,12 +80,12 @@ public static class UpdateL10N
         var l10nDict = new Dictionary<int, string>(); // id->文本
         var l10nDict1 = new Dictionary<string, int>(); // 文本->id
         var l10nSheet = l10nExcel.Workbook.Worksheets[0];
-        var l10nRow = Utils.GetContentStartRow(l10nSheet);
+        var l10nRow = l10nSheet.GetContentStartRow();
         var l10nId = 0;
         while (l10nRow < Utils.MaxRowCount) // 行数上限
         {
             var idCell = l10nSheet.Cells[l10nRow, 2];   // id列
-            if (Utils.IsCellEmpty(idCell))
+            if (idCell.IsCellEmpty())
                 break;
             try
             {
@@ -132,7 +132,7 @@ public static class UpdateL10N
                 for (int i = 3; i < Utils.MaxColCount; i++) // 列数上限
                 {
                     var cell = worksheet.Cells[1, i];
-                    if (Utils.IsCellEmpty(cell))
+                    if (cell.IsCellEmpty())
                         break;
                     if (cell.Text.EndsWith(p.NoteColumnSuffix))
                         noteIdDict.Add(cell, null);
@@ -140,7 +140,7 @@ public static class UpdateL10N
                 for (int i = 3; i < Utils.MaxColCount; i++)  // 列数上限
                 {
                     var cell = worksheet.Cells[1, i];
-                    if (Utils.IsCellEmpty(cell))
+                    if (cell.IsCellEmpty())
                         break;
                     if (cell.Text.EndsWith(p.TextIdColumnSuffix))
                     {
@@ -175,10 +175,10 @@ public static class UpdateL10N
                         continue;
                     var keyCol = pair.Key.Start.Column;
                     var valueCol = pair.Value.Start.Column;
-                    for (var row = Utils.GetContentStartRow(worksheet); row < Utils.GetContentTotalRow(worksheet, row); row++)
+                    for (var row = worksheet.GetContentStartRow(); row < worksheet.GetContentTotalRow(row); row++)
                     {
                         var noteCell = worksheet.Cells[row, keyCol];
-                        if (Utils.IsCellEmpty(noteCell))
+                        if (noteCell.IsCellEmpty())
                             break;
                         var idCell = worksheet.Cells[row, valueCol];
                         var noteText = noteCell.Text;
@@ -226,11 +226,11 @@ public static class UpdateL10N
         if (appendIds.Count == 0)
             return;
         Console.WriteLine($"================================");
-        var appendRow = Utils.GetContentStartRow(l10nSheet);
+        var appendRow = l10nSheet.GetContentStartRow();
         while (appendRow < Utils.MaxRowCount) // 行数上限
         {
             var idCell = l10nSheet.Cells[appendRow, 2];   // id列
-            if (Utils.IsCellEmpty(idCell))
+            if (idCell.IsCellEmpty())
                 break;
             try
             {

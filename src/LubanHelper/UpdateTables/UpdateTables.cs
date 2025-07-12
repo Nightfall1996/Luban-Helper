@@ -1,4 +1,5 @@
-﻿using System.Text.RegularExpressions;
+﻿using System.Diagnostics;
+using System.Text.RegularExpressions;
 using OfficeOpenXml;
 namespace LubanHelper.UpdateTables;
 
@@ -81,17 +82,22 @@ public static class UpdateTables
             return;
         }
 
-        var relativePath = Utils.GetRelativePath(tablesFilePath, dataPath);
         var tableItemDict = new Dictionary<string, TableItem>();
-        var files = Directory.GetFiles(dataPath);
+        var files = Directory.GetFiles(dataPath, "*.xlsx", SearchOption.AllDirectories)
+            .Where(file => 
+                !Path.GetFileName(file).StartsWith("__") && 
+                !Path.GetFileName(file).StartsWith("~$"))
+            .ToArray();
+        
         foreach (var file in files)
         {
             var info = new FileInfo(file);
             if (!info.Extension.Equals(".xlsx"))
                 continue;
+            
             if (Utils.IsSkipFile(info.Name))
             {
-                Console.WriteLine($"Skip file {info.Name}");
+                // Console.WriteLine($"Skip file {info.Name}");
                 continue;
             }
             
@@ -102,11 +108,12 @@ public static class UpdateTables
                 // 跳过无关工作表（如临时表、隐藏表等）
                 if (Utils.IsSkipFile(worksheet.Name))
                 {
-                    Console.WriteLine($"Skip sheet {worksheet.Name} of file {info.Name} ");
+                    // Console.WriteLine($"Skip sheet {worksheet.Name} of file {info.Name} ");
                     continue;
                 }
                 
-                Console.WriteLine($"Processing sheet {worksheet.Name} of file {info.Name}");
+                var relativeFilePath = Utils.GetRelativeFilePath(dataPath, file);
+                // Console.WriteLine($"Processing sheet {worksheet.Name} of file {info.Name}. relativePath : {relativeFilePath}");
                 // 解析工作表名，判断模式（one/list/map）
                 var sheetName = worksheet.Name;
                 string mode = "";
@@ -135,24 +142,19 @@ public static class UpdateTables
                 }
                 
                 // 组装表全名（如 TbXXX）
-                string fullName;
-                if (split.Length > 1)
-                    fullName = $"{string.Join(".", split.Take(split.Length - 1))}.Tb{valueType}";
-                else
-                    fullName = $"Tb{valueType}";
-
+                string fullName = $"Tb{valueType}";
                 if (tableItemDict.TryGetValue(fullName, out var itemInDict))
                 {
                     // 多工作表对单数据表，追加到输入文件字段
-                    itemInDict.Input = $"{itemInDict.Input},{relativePath}{worksheet.Name}@{info.Name}";
+                    itemInDict.Input = $"{itemInDict.Input},{worksheet.Name}@{relativeFilePath}";
                 }
                 else
                 {
                     var tableItem = new TableItem
                     {
                         FullName = fullName,
-                        ValueType = valueType,
-                        Input = $"{relativePath}{worksheet.Name}@{info.Name}",
+                        ValueType = $"{valueType}Bean",
+                        Input = $"{worksheet.Name}@{relativeFilePath}",
                         Mode = mode
                     };
                     tableItemDict.Add(tableItem.FullName, tableItem);
@@ -164,15 +166,15 @@ public static class UpdateTables
 
         // 备份原表格
         var tablesFileInfo = new FileInfo(tablesFilePath);
-        try
-        {
-            var backupFilePath = Path.Combine(tablesFileInfo.DirectoryName, $"{tablesFileInfo.Name.Replace(tablesFileInfo.Extension, "")}.backup{tablesFileInfo.Extension}");
-            File.Copy(tablesFilePath, backupFilePath, true);
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"Error: Backup {tablesFileInfo.Name} failed: \n{ex.Message}");
-        }
+        // try
+        // {
+        //     var backupFilePath = Path.Combine(tablesFileInfo.DirectoryName, $"{tablesFileInfo.Name.Replace(tablesFileInfo.Extension, "")}.backup{tablesFileInfo.Extension}");
+        //     File.Copy(tablesFilePath, backupFilePath, true);
+        // }
+        // catch (Exception ex)
+        // {
+        //     Console.Error.WriteLine($"Error: Backup {tablesFileInfo.Name} failed: \n{ex.Message}");
+        // }
 
         try
         {
