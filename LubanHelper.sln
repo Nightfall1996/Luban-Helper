@@ -1,6 +1,6 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LubanHelper", "LubanHelper\LubanHelper.csproj", "{491F3FA1-C2D9-4FFE-90F8-F79EC4343507}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LubanHelper", "LubanHelper.csproj", "{491F3FA1-C2D9-4FFE-90F8-F79EC4343507}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
