@@ -4,15 +4,26 @@ using LubanHelper;
 
 class Program
 {
-    
+    // 排除文件名正则（以__开头的文件）
     private static Regex _excludeRegex = new("^__");
+    // 匹配#one结尾的表名，单行模式
     private static Regex _oneMode = new("#one$", RegexOptions.IgnoreCase);
+    // 匹配#list结尾的表名，列表模式
     private static Regex _listMode = new("#list$", RegexOptions.IgnoreCase);
+    // 匹配#map结尾的表名，映射模式
     private static Regex _mapMode = new("#map$", RegexOptions.IgnoreCase);
+    // 匹配-数字结尾的表名片段
     private static Regex _part = new("-\\d+$");
+    
+    // 魔法数字常量
+    private const int MaxRowCount = 10000;
+    private const int MaxColCount = 1000;
+    private const int DefaultContentStartRow = 4;
+    private const int MaxHeaderScanRow = 50;
     
     static void Main(string[] args)
     {
+        // 主入口，解析命令行参数
         if (args.Length == 0)
         {
             Console.WriteLine("Please input arguments.");
@@ -24,6 +35,7 @@ class Program
             string tablesPath = null;
             string dataPath = null;
             
+            // 解析参数
             for (int i = 1; i < args.Length; i++)
             {
                 if (args[i] == "--tablesPath" && i + 1 < args.Length)
@@ -51,13 +63,15 @@ class Program
         }
         else if (args[0].Equals("updateL10N"))
         {
+            // 初始化本地化参数
             UpdateL10NParams p = new UpdateL10NParams
             {
-                NoteColumnSuffix = "Note",
-                TextIdColumnSuffix = "TextId",
-                L10NStartId = -1,
+                NoteColumnSuffix = "Note", // 注释列后缀
+                TextIdColumnSuffix = "TextId", // 文本ID列后缀
+                L10NStartId = -1, // 本地化起始ID
             };
 
+            // 解析参数
             for (int i = 1; i < args.Length; i++)
             {
                 if (args[i] == "--l10nPath" && i + 1 < args.Length)
@@ -91,6 +105,7 @@ class Program
         }
     }
 
+    // 更新表格配置
     private static void UpdateTables(string tablesFilePath, string dataPath)
     {
         if (!File.Exists(tablesFilePath))
@@ -179,6 +194,7 @@ class Program
             }
         }
 
+        // 备份原表格
         var tablesFileInfo = new FileInfo(tablesFilePath);
         try
         {
@@ -194,7 +210,7 @@ class Program
         {
             using var tablesPackage = new ExcelPackage(tablesFileInfo);
             var worksheet = tablesPackage.Workbook.Worksheets[0];
-            worksheet.DeleteRow(4, 999);
+            worksheet.DeleteRow(4, 999); // 清除旧数据
             var row = 4;
             foreach (var tableItem in tableItemDict.Values)
             {
@@ -217,6 +233,7 @@ class Program
 
     }
 
+    // 获取相对路径
     private static string GetRelativePath(string pathA, string pathB)
     {
         var uriA = new Uri(EnsureTrailingSlash(Path.GetFullPath(pathA)));
@@ -225,6 +242,7 @@ class Program
         return Uri.UnescapeDataString(relativeUri.ToString());
     }
     
+    // 确保路径以分隔符结尾
     private static string EnsureTrailingSlash(string path)
     {
         if (!path.EndsWith(Path.DirectorySeparatorChar.ToString()) && Directory.Exists(path))
@@ -234,6 +252,7 @@ class Program
         return path;
     }
     
+    // 更新本地化表格
     private static void UpdateL10N(UpdateL10NParams p)
     {
         if (!File.Exists(p.L10NFilePath))
@@ -247,30 +266,29 @@ class Program
             return;
         }
 
-        // Fill L10N dict
+        // 填充L10N字典
         var l10nFileInfo = new FileInfo(p.L10NFilePath);
         using var l10nExcel = new ExcelPackage(l10nFileInfo);
-        var l10nDict = new Dictionary<int, string>();
-        var l10nDict1 = new Dictionary<string, int>();
+        var l10nDict = new Dictionary<int, string>(); // id->文本
+        var l10nDict1 = new Dictionary<string, int>(); // 文本->id
         var l10nSheet = l10nExcel.Workbook.Worksheets[0];
         var l10nRow = GetContentStartRow(l10nSheet);
         var l10nId = 0;
-        while (l10nRow < 10000) // hard-coded row limit
+        while (l10nRow < MaxRowCount) // 行数上限
         {
-            var idCell = l10nSheet.Cells[l10nRow, 2];   // hard-coded id column
+            var idCell = l10nSheet.Cells[l10nRow, 2];   // id列
             if (IsCellEmpty(idCell))
                 break;
-            
             try
             {
                 l10nId = idCell.GetValue<int>();
-                var content = l10nSheet.Cells[l10nRow, 3].Text; // hard-coded content column
+                var content = l10nSheet.Cells[l10nRow, 3].Text; // 文本内容列
                 l10nDict.Add(l10nId, content);
                 Console.WriteLine($"Read L10NTable row {l10nRow}: {l10nId} {content}");
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Error: Read {l10nFileInfo.Name} row {l10nRow} failed: \n{ex.Message}");
+                Console.Error.WriteLine($"Error: Read {l10nFileInfo.Name} row {l10nRow} failed: \n{ex}");
                 return;
             }
             l10nRow++;
@@ -285,7 +303,7 @@ class Program
             l10nDict1[pair.Value] = pair.Key;
         }
         
-        // Process data files
+        // 处理数据文件
         var files = Directory.GetFiles(p.DataPath);
         foreach (var file in files)
         {
@@ -298,12 +316,12 @@ class Program
                 continue;
             }
 
-            var excel = new ExcelPackage(info);
+            using var excel = new ExcelPackage(info);
             foreach (var worksheet in excel.Workbook.Worksheets)
             {
-                // Find L10N fields
+                // 查找本地化字段
                 var noteIdDict = new Dictionary<ExcelRange, ExcelRange>();
-                for (int i = 3; i < 1000; i++) // hard-coded column limit
+                for (int i = 3; i < MaxColCount; i++) // 列数上限
                 {
                     var cell = worksheet.Cells[1, i];
                     if (IsCellEmpty(cell))
@@ -311,7 +329,7 @@ class Program
                     if (cell.Text.EndsWith(p.NoteColumnSuffix))
                         noteIdDict.Add(cell, null);
                 }
-                for (int i = 3; i < 1000; i++)  // hard-coded column limit
+                for (int i = 3; i < MaxColCount; i++)  // 列数上限
                 {
                     var cell = worksheet.Cells[1, i];
                     if (IsCellEmpty(cell))
@@ -342,7 +360,7 @@ class Program
                         Console.WriteLine($"{pair.Key.Text} : {pair.Value.Text}");
                 }
                 
-                // Fill L10N fields
+                // 填充本地化字段
                 foreach (var pair in noteIdDict)
                 {
                     if (pair.Value == null)
@@ -379,7 +397,7 @@ class Program
             excel.Save();
         }
         
-        // Append file
+        // 追加文件内容
         if (string.IsNullOrEmpty(p.AppendFilePath))
             return;
         if (!File.Exists(p.AppendFilePath))
@@ -401,9 +419,9 @@ class Program
             return;
         Console.WriteLine($"================================");
         var appendRow = GetContentStartRow(l10nSheet);
-        while (appendRow < 10000) // hard-coded row limit
+        while (appendRow < MaxRowCount) // 行数上限
         {
-            var idCell = l10nSheet.Cells[appendRow, 2];   // hard-coded id column
+            var idCell = l10nSheet.Cells[appendRow, 2];   // id列
             if (IsCellEmpty(idCell))
                 break;
             try
@@ -412,7 +430,7 @@ class Program
                 if (l10nId >= appendIds[0])
                     break;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 return;
             }
@@ -429,14 +447,16 @@ class Program
         Console.WriteLine($"{appendIds.Count} rows appended");
     }
 
+    // 判断单元格是否为空
     private static bool IsCellEmpty(ExcelRange cell)
     {
         return cell.Value == null || string.IsNullOrEmpty(cell.Text) || string.IsNullOrWhiteSpace(cell.Text);
     }
 
+    // 获取内容起始行
     private static int GetContentStartRow(ExcelWorksheet worksheet)
     {
-        for (int i = 1; i < 50; i++)
+        for (int i = 1; i < MaxHeaderScanRow; i++)
         {
             var cell = worksheet.Cells[i, 1];
             if (IsCellEmpty(cell))
@@ -444,12 +464,13 @@ class Program
             if (!cell.Text.StartsWith("#"))
                 return i;
         }
-        return 4;
+        return DefaultContentStartRow;
     }
 
+    // 获取内容总行数
     private static int GetContentTotalRow(ExcelWorksheet worksheet, int contentStartRow)
     {
-        for (int i = contentStartRow; i < 10000; i++)
+        for (int i = contentStartRow; i < MaxRowCount; i++)
         {
             var cell = worksheet.Cells[i, 2];
             if (IsCellEmpty(cell))
@@ -459,14 +480,14 @@ class Program
     }
 }
 
-
+// 本地化参数结构体
 public struct UpdateL10NParams
 {
-    public string L10NFilePath;
-    public string DataPath;
-    public string NoteColumnSuffix;
-    public string TextIdColumnSuffix;
-    public int L10NStartId;
-    public bool ClearL10N; // not implemented yet
-    public string AppendFilePath;
+    public string L10NFilePath; // 本地化表格路径
+    public string DataPath; // 数据目录
+    public string NoteColumnSuffix; // 注释列后缀
+    public string TextIdColumnSuffix; // 文本ID列后缀
+    public int L10NStartId; // 本地化起始ID
+    public bool ClearL10N; // 是否清空本地化，未实现
+    public string AppendFilePath; // 追加文件路径
 }
